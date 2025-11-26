@@ -1,6 +1,7 @@
 package syncqubits.ai.blog.pranuBlog.service.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -24,6 +25,8 @@ import syncqubits.ai.blog.pranuBlog.mapper.PostMapper;
 import syncqubits.ai.blog.pranuBlog.repository.PostRepository;
 import syncqubits.ai.blog.pranuBlog.repository.UserRepository;
 import syncqubits.ai.blog.pranuBlog.service.PostService;
+import syncqubits.ai.blog.pranuBlog.util.GeoLocationUtil;
+import syncqubits.ai.blog.pranuBlog.util.IpAddressUtil;
 import syncqubits.ai.blog.pranuBlog.util.TokenGenerator;
 
 import java.time.LocalDateTime;
@@ -40,6 +43,8 @@ public class PostServiceImpl implements PostService {
     private final PostMapper postMapper;
     private final TokenGenerator tokenGenerator;
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final IpAddressUtil ipAddressUtil;
+    private final GeoLocationUtil geoLocationUtil;
 
 
     @Override
@@ -170,8 +175,8 @@ public class PostServiceImpl implements PostService {
 
     @Override
     @Transactional
-    public PostDetailResponse getPublicPost(String shareToken, String viewerGuestId,
-                                            String referrer, String userAgent) {
+    public PostDetailResponse getPublicPost(String shareToken, String guestName, String viewerGuestId,
+                                            String referrer, String userAgent, HttpServletRequest request) {
         log.info("Fetching public post with token: {}", shareToken);
 
         Post post = postRepository.findByShareToken(shareToken)
@@ -181,8 +186,8 @@ public class PostServiceImpl implements PostService {
             throw new UnauthorizedException("Post is not public");
         }
 
-        // Record view
-        recordView(post, viewerGuestId, referrer, userAgent);
+        // Record view with IP and geolocation
+        recordView(post, guestName, viewerGuestId, referrer, userAgent, request);
 
         return toPostDetailResponse(post);
     }
@@ -207,9 +212,9 @@ public class PostServiceImpl implements PostService {
 
     @Override
     @Transactional
-    public PostResponse likePost(String shareToken, Long userId,
-                                 String guestName, String guestIdentifier) {
-        log.info("Adding like to post with token: {}", shareToken);
+    public PostResponse toggleLike(String shareToken, Long userId, String guestName,
+                                   String guestIdentifier, HttpServletRequest request) {
+        log.info("Toggling like for post with token: {}", shareToken);
 
         Post post = postRepository.findByShareToken(shareToken)
                 .orElseThrow(() -> new ResourceNotFoundException("Post not found"));
@@ -218,30 +223,52 @@ public class PostServiceImpl implements PostService {
         List<Map<String, Object>> entries = (List<Map<String, Object>>)
                 likes.getOrDefault("entries", new ArrayList<>());
 
-        // Check if already liked
-        boolean alreadyLiked = entries.stream().anyMatch(entry -> {
+        // Find existing like
+        Map<String, Object> existingLike = null;
+        int existingIndex = -1;
+
+        for (int i = 0; i < entries.size(); i++) {
+            Map<String, Object> entry = entries.get(i);
+            boolean isMatch = false;
+
             if (userId != null && entry.containsKey("user_id")) {
-                return Objects.equals(entry.get("user_id"), userId.intValue());
+                isMatch = Objects.equals(entry.get("user_id"), userId.intValue());
             } else if (guestIdentifier != null && entry.containsKey("guest_identifier")) {
-                return Objects.equals(entry.get("guest_identifier"), guestIdentifier);
+                isMatch = Objects.equals(entry.get("guest_identifier"), guestIdentifier);
             }
-            return false;
-        });
 
-        if (alreadyLiked) {
-            throw new IllegalArgumentException("Already liked this post");
+            if (isMatch) {
+                existingLike = entry;
+                existingIndex = i;
+                break;
+            }
         }
 
-        Map<String, Object> likeEntry = new HashMap<>();
-        if (userId != null) {
-            likeEntry.put("user_id", userId);
+        String message;
+        if (existingLike != null) {
+            // Unlike - remove existing like
+            entries.remove(existingIndex);
+            message = "Post unliked successfully";
+            log.info("Removed like from post");
         } else {
-            likeEntry.put("guest_name", guestName);
-            likeEntry.put("guest_identifier", guestIdentifier);
-        }
-        likeEntry.put("liked_at", LocalDateTime.now().toString());
+            // Like - add new like
+            String ipAddress = ipAddressUtil.getClientIpAddress(request);
 
-        entries.add(likeEntry);
+            Map<String, Object> likeEntry = new HashMap<>();
+            if (userId != null) {
+                likeEntry.put("user_id", userId);
+            } else {
+                likeEntry.put("guest_name", guestName);
+                likeEntry.put("guest_identifier", guestIdentifier);
+            }
+            likeEntry.put("ip_address", ipAddress);
+            likeEntry.put("liked_at", LocalDateTime.now().toString());
+
+            entries.add(likeEntry);
+            message = "Post liked successfully";
+            log.info("Added like to post");
+        }
+
         likes.put("entries", entries);
         likes.put("count", entries.size());
 
@@ -249,13 +276,15 @@ public class PostServiceImpl implements PostService {
         updateMetrics(post);
         post = postRepository.save(post);
 
-        log.info("Like added successfully");
-        return toPostResponse(post);
+        PostResponse response = toPostResponse(post);
+        // Add custom message field if needed
+        log.info(message);
+        return response;
     }
 
     @Override
     @Transactional
-    public CommentResponse addComment(String shareToken, CommentRequest request) {
+    public CommentResponse addComment(String shareToken, CommentRequest request, HttpServletRequest httpRequest) {
         log.info("Adding comment to post with token: {}", shareToken);
 
         Post post = postRepository.findByShareToken(shareToken)
@@ -270,14 +299,20 @@ public class PostServiceImpl implements PostService {
                 comments.getOrDefault("entries", new ArrayList<>());
 
         String commentId = "c" + UUID.randomUUID().toString().substring(0, 8);
+        String ipAddress = ipAddressUtil.getClientIpAddress(httpRequest);
 
         Map<String, Object> commentEntry = new HashMap<>();
         commentEntry.put("comment_id", commentId);
+        commentEntry.put("guest_name", request.getGuestName());
+
         if (request.getUserId() != null) {
             commentEntry.put("user_id", request.getUserId());
-        } else {
-            commentEntry.put("guest_name", request.getGuestName());
         }
+        if (request.getGuestIdentifier() != null) {
+            commentEntry.put("guest_identifier", request.getGuestIdentifier());
+        }
+
+        commentEntry.put("ip_address", ipAddress);
         commentEntry.put("content", request.getContent());
         commentEntry.put("created_at", LocalDateTime.now().toString());
         commentEntry.put("replies", new ArrayList<>());
@@ -298,6 +333,7 @@ public class PostServiceImpl implements PostService {
                 .comment(commentDTO)
                 .build();
     }
+
 
     @Override
     @Transactional
@@ -367,23 +403,33 @@ public class PostServiceImpl implements PostService {
         return post;
     }
 
-    private void recordView(Post post, String viewerGuestId, String referrer, String userAgent) {
+    private void recordView(Post post, String guestName, String viewerGuestId, String referrer,
+                            String userAgent, HttpServletRequest request) {
         Map<String, Object> views = post.getViews();
         List<Map<String, Object>> entries = (List<Map<String, Object>>)
                 views.getOrDefault("entries", new ArrayList<>());
 
+        String ipAddress = ipAddressUtil.getClientIpAddress(request);
+        Map<String, String> location = geoLocationUtil.getLocationFromIp(ipAddress);
+
         Map<String, Object> viewEntry = new HashMap<>();
         viewEntry.put("viewer_guest_id", viewerGuestId);
+        viewEntry.put("guest_name", guestName);
+        viewEntry.put("ip_address", ipAddress);
+        viewEntry.put("country", location.get("country"));
+        viewEntry.put("city", location.get("city"));
+        viewEntry.put("region", location.get("region"));
         viewEntry.put("viewed_at", LocalDateTime.now().toString());
         viewEntry.put("referrer", referrer);
         viewEntry.put("user_agent", userAgent);
 
         entries.add(viewEntry);
 
-        // Calculate unique viewers
+        // Calculate unique viewers by guestId
         Set<String> uniqueViewers = entries.stream()
                 .map(e -> (String) e.get("viewer_guest_id"))
                 .filter(Objects::nonNull)
+                .filter(id -> !id.isEmpty())
                 .collect(Collectors.toSet());
 
         views.put("entries", entries);
@@ -544,15 +590,21 @@ public class PostServiceImpl implements PostService {
                 .build();
     }
 
+    // Update mapToViewEntryDTO
     private ViewEntryDTO mapToViewEntryDTO(Map<String, Object> map) {
         return ViewEntryDTO.builder()
                 .viewerGuestId((String) map.get("viewer_guest_id"))
+                .guestName((String) map.get("guest_name"))
+                .ipAddress((String) map.get("ip_address"))
+                .country((String) map.get("country"))
+                .city((String) map.get("city"))
+                .region((String) map.get("region"))
                 .viewedAt(LocalDateTime.parse((String) map.get("viewed_at")))
                 .referrer((String) map.get("referrer"))
                 .userAgent((String) map.get("user_agent"))
                 .build();
     }
-
+    // Update mapToLikeEntryDTO
     private LikeEntryDTO mapToLikeEntryDTO(Map<String, Object> map) {
         Long userId = map.containsKey("user_id") ?
                 ((Number) map.get("user_id")).longValue() : null;
@@ -561,9 +613,11 @@ public class PostServiceImpl implements PostService {
                 .userId(userId)
                 .guestName((String) map.get("guest_name"))
                 .guestIdentifier((String) map.get("guest_identifier"))
+                .ipAddress((String) map.get("ip_address"))
                 .likedAt(LocalDateTime.parse((String) map.get("liked_at")))
                 .build();
     }
+
 
     private CommentEntryDTO mapToCommentEntryDTO(Map<String, Object> map) {
         Long userId = map.containsKey("user_id") ?

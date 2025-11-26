@@ -45,11 +45,13 @@ springdoc:
 app:
   jwt:
     secret: ${JWT_SECRET:C4UYUEVWWDowu7aVXlcr8FjmnCzEZAoyivPr94zw6zU}
-    expiration: 86400000
+    expiration: 10800000
   otp:
     expiration: 300000
     length: 6
   email:
     from: ${SPRING_MAIL_USERNAME:thehostcode@gmail.com}
+    logo-url: https://1drv.ms/f/c/865403e1743e3bfe/IgASe0zh1ImGQL8tYrfKzOd4Acgsq4zzbDUAfQxpSM-zS1U?e=vV3qeG
   cors:
     allowed-origins: "*"
+

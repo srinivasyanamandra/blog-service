@@ -1,5 +1,6 @@
 package syncqubits.ai.blog.pranuBlog.service;
 
+import jakarta.servlet.http.HttpServletRequest;
 import syncqubits.ai.blog.pranuBlog.dto.request.CommentRequest;
 import syncqubits.ai.blog.pranuBlog.dto.request.CreatePostRequest;
 import syncqubits.ai.blog.pranuBlog.dto.request.ReplyRequest;
@@ -19,11 +20,13 @@ public interface PostService {
 
     List<PostResponse> getMyPosts(Long authorId);
     PostDetailResponse getPostById(Long authorId, Long postId);
-    List<PostResponse> listPublicPosts(); // NEW METHOD
-    PostDetailResponse getPublicPost(String shareToken, String viewerGuestId, String referrer, String userAgent);
+    List<PostResponse> listPublicPosts();
+    PostDetailResponse getPublicPost(String shareToken, String guestName, String viewerGuestId,
+                                     String referrer, String userAgent, HttpServletRequest request); // UPDATED
 
     PostResponse toggleFavorite(Long authorId, Long postId);
-    PostResponse likePost(String shareToken, Long userId, String guestName, String guestIdentifier);
-    CommentResponse addComment(String shareToken, CommentRequest request);
+    PostResponse toggleLike(String shareToken, Long userId, String guestName,
+                            String guestIdentifier, HttpServletRequest request); // UPDATED - TOGGLE
+    CommentResponse addComment(String shareToken, CommentRequest request, HttpServletRequest httpRequest);
     CommentResponse addReply(String shareToken, ReplyRequest request);
 }

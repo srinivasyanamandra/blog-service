@@ -11,9 +11,13 @@ import syncqubits.ai.blog.pranuBlog.dto.request.ResendOtpRequest;
 import syncqubits.ai.blog.pranuBlog.dto.request.SignupRequest;
 import syncqubits.ai.blog.pranuBlog.dto.request.VerifyOtpRequest;
 import syncqubits.ai.blog.pranuBlog.dto.response.AuthResponse;
+import syncqubits.ai.blog.pranuBlog.dto.response.LogoutResponse;
+import syncqubits.ai.blog.pranuBlog.dto.response.TokenValidationResponse;
+import syncqubits.ai.blog.pranuBlog.entity.InvalidatedToken;
 import syncqubits.ai.blog.pranuBlog.entity.User;
 import syncqubits.ai.blog.pranuBlog.exception.UnauthorizedException;
 import syncqubits.ai.blog.pranuBlog.mapper.UserMapper;
+import syncqubits.ai.blog.pranuBlog.repository.InvalidatedTokenRepository;
 import syncqubits.ai.blog.pranuBlog.repository.UserRepository;
 import syncqubits.ai.blog.pranuBlog.service.AuthService;
 import syncqubits.ai.blog.pranuBlog.service.EmailService;
@@ -21,6 +25,8 @@ import syncqubits.ai.blog.pranuBlog.util.JwtUtil;
 import syncqubits.ai.blog.pranuBlog.util.OtpGenerator;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.util.Date;
 
 @Service
 @RequiredArgsConstructor
@@ -28,6 +34,7 @@ import java.time.LocalDateTime;
 public class AuthServiceImpl implements AuthService {
 
     private final UserRepository userRepository;
+    private final InvalidatedTokenRepository invalidatedTokenRepository;
     private final UserMapper userMapper;
     private final EmailService emailService;
     private final JwtUtil jwtUtil;
@@ -49,6 +56,7 @@ public class AuthServiceImpl implements AuthService {
         User user = userMapper.toEntity(request);
         user.setPasswordHash(passwordEncoder.encode(request.getPassword()));
         user.setIsVerified(false);
+        user.setRequiresReVerification(false);
 
         // Generate and set OTP
         String otp = otpGenerator.generateOtp();
@@ -78,10 +86,6 @@ public class AuthServiceImpl implements AuthService {
         User user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> new UnauthorizedException("User not found"));
 
-        if (user.getIsVerified()) {
-            throw new IllegalArgumentException("User already verified");
-        }
-
         if (user.getOtp() == null || user.getOtpExpiryTime() == null) {
             throw new UnauthorizedException("OTP not found. Please request a new one.");
         }
@@ -94,16 +98,19 @@ public class AuthServiceImpl implements AuthService {
             throw new UnauthorizedException("Invalid OTP");
         }
 
-        // Mark user as verified
+        // Mark user as verified and clear re-verification flag
         user.setIsVerified(true);
+        user.setRequiresReVerification(false);
         user.setOtp(null);
         user.setOtpExpiryTime(null);
         user = userRepository.save(user);
 
         log.info("User verified successfully: {}", user.getEmail());
 
-        // Send welcome email
-        emailService.sendWelcomeEmail(user.getEmail(), user.getName());
+        // Send welcome email only if first time verification
+        if (user.getLastLoginAt() == null) {
+            emailService.sendWelcomeEmail(user.getEmail(), user.getName());
+        }
 
         // Generate JWT token
         String token = jwtUtil.generateToken(
@@ -114,7 +121,7 @@ public class AuthServiceImpl implements AuthService {
 
         AuthResponse response = userMapper.toAuthResponse(user);
         response.setToken(token);
-        response.setMessage("Email verified successfully. You can now login.");
+        response.setMessage("Email verified successfully. You are now logged in.");
         return response;
     }
 
@@ -125,10 +132,6 @@ public class AuthServiceImpl implements AuthService {
 
         User user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> new UnauthorizedException("User not found"));
-
-        if (user.getIsVerified()) {
-            throw new IllegalArgumentException("User already verified");
-        }
 
         // Generate new OTP
         String otp = otpGenerator.generateOtp();
@@ -159,8 +162,25 @@ public class AuthServiceImpl implements AuthService {
             throw new UnauthorizedException("Invalid email or password");
         }
 
-        if (!user.getIsVerified()) {
-            throw new UnauthorizedException("Please verify your email first");
+        // Check if user requires re-verification (logged out)
+        if (user.getRequiresReVerification() || !user.getIsVerified()) {
+            // Generate new OTP
+            String otp = otpGenerator.generateOtp();
+            user.setOtp(otp);
+            user.setOtpExpiryTime(LocalDateTime.now().plusSeconds(otpExpiration / 1000));
+            userRepository.save(user);
+
+            // Send OTP email
+            emailService.sendOtpEmail(user.getEmail(), otp, user.getName());
+
+            log.info("User requires verification. OTP sent to: {}", user.getEmail());
+
+            return AuthResponse.builder()
+                    .userId(user.getId())
+                    .email(user.getEmail())
+                    .isVerified(false)
+                    .message("Please verify your email. OTP has been sent to your email address.")
+                    .build();
         }
 
         user.setLastLoginAt(LocalDateTime.now());
@@ -182,10 +202,100 @@ public class AuthServiceImpl implements AuthService {
     }
 
     @Override
+    @Transactional
+    public LogoutResponse logout(String token) {
+        log.info("Processing logout request");
+
+        if (token != null && token.startsWith("Bearer ")) {
+            token = token.substring(7);
+        }
+
+        // Validate token first
+        if (!jwtUtil.validateToken(token)) {
+            throw new UnauthorizedException("Invalid or expired token");
+        }
+
+        // Extract user info
+        Long userId = jwtUtil.extractUserId(token);
+        String email = jwtUtil.extractEmail(token);
+        Date expiration = jwtUtil.extractExpiration(token);
+
+        // Find user and set re-verification flag
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new UnauthorizedException("User not found"));
+
+        user.setRequiresReVerification(true);
+        user.setLastLogoutAt(LocalDateTime.now());
+        userRepository.save(user);
+
+        // Add token to blacklist
+        InvalidatedToken invalidatedToken = InvalidatedToken.builder()
+                .token(token)
+                .userId(userId)
+                .expiryTime(expiration.toInstant()
+                        .atZone(ZoneId.systemDefault())
+                        .toLocalDateTime())
+                .reason("LOGOUT")
+                .build();
+
+        invalidatedTokenRepository.save(invalidatedToken);
+
+        log.info("User logged out successfully: {}, Token invalidated", email);
+
+        return LogoutResponse.builder()
+                .success(true)
+                .message("Logout successful. You will need to verify OTP on next login.")
+                .email(email)
+                .logoutAt(LocalDateTime.now())
+                .build();
+    }
+
+    @Override
     public Long getUserIdFromToken(String token) {
         if (token != null && token.startsWith("Bearer ")) {
             token = token.substring(7);
         }
         return jwtUtil.extractUserId(token);
+    }
+
+    @Override
+    public TokenValidationResponse validateToken(String token) {
+        log.info("Validating JWT token");
+
+        if (token != null && token.startsWith("Bearer ")) {
+            token = token.substring(7);
+        }
+
+        try {
+            Boolean isValid = jwtUtil.validateToken(token);
+
+            if (isValid) {
+                Long userId = jwtUtil.extractUserId(token);
+                String email = jwtUtil.extractEmail(token);
+                String role = jwtUtil.extractRole(token);
+                Date expiration = jwtUtil.extractExpiration(token);
+
+                return TokenValidationResponse.builder()
+                        .valid(true)
+                        .message("Token is valid")
+                        .userId(userId)
+                        .email(email)
+                        .role(role)
+                        .issuedAt(new Date(expiration.getTime() - 86400000))
+                        .expiresAt(expiration)
+                        .build();
+            } else {
+                return TokenValidationResponse.builder()
+                        .valid(false)
+                        .message("Token is invalid or expired")
+                        .build();
+            }
+        } catch (Exception e) {
+            log.error("Token validation error: {}", e.getMessage());
+            return TokenValidationResponse.builder()
+                    .valid(false)
+                    .message("Token validation failed: " + e.getMessage())
+                    .build();
+        }
     }
 }

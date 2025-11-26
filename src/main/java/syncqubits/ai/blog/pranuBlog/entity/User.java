@@ -45,12 +45,19 @@ public class User {
     @Builder.Default
     private Boolean isVerified = false;
 
+    @Column(nullable = false)
+    @Builder.Default
+    private Boolean requiresReVerification = false; // NEW FIELD
+
     @CreationTimestamp
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
     @Column
     private LocalDateTime lastLoginAt;
+
+    @Column
+    private LocalDateTime lastLogoutAt; // NEW FIELD
 
     @OneToMany(mappedBy = "author", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default

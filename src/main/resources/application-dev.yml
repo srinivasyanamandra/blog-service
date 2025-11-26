@@ -32,4 +32,4 @@ app:
   jwt:
     # DEV ONLY — replace/override from env var JWT_SECRET in real usage
     secret: C4UYUEVWWDowu7aVXlcr8FjmnCzEZAoyivPr94zw6zU
-    expiration: 86400000
+    expiration: 10800000

@@ -5,9 +5,11 @@ import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import syncqubits.ai.blog.pranuBlog.repository.InvalidatedTokenRepository;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
@@ -17,8 +19,11 @@ import java.util.Map;
 import java.util.function.Function;
 
 @Component
+@RequiredArgsConstructor
 @Slf4j
 public class JwtUtil {
+
+    private final InvalidatedTokenRepository invalidatedTokenRepository;
 
     @Value("${app.jwt.secret}")
     private String secret; // Recommended: Base64-encoded 256+ bit key
@@ -47,6 +52,9 @@ public class JwtUtil {
         }
     }
 
+    /**
+     * Generate a new JWT token for the user
+     */
     public String generateToken(Long userId, String email, String role) {
         Map<String, Object> claims = new HashMap<>();
         claims.put("userId", userId);
@@ -55,6 +63,9 @@ public class JwtUtil {
         return createToken(claims, email);
     }
 
+    /**
+     * Create JWT token with claims
+     */
     private String createToken(Map<String, Object> claims, String subject) {
         Date now = new Date();
         Date expiryDate = new Date(now.getTime() + expiration);
@@ -68,13 +79,28 @@ public class JwtUtil {
                 .compact();
     }
 
+    /**
+     * Validate JWT token
+     * Checks:
+     * 1. Token signature validity
+     * 2. Token expiration
+     * 3. Token blacklist (logged out tokens)
+     */
     public boolean validateToken(String token) {
         try {
+            // First check if token is blacklisted (logged out)
+            if (isTokenBlacklisted(token)) {
+                log.warn("Token validation failed: Token is blacklisted (user logged out)");
+                return false;
+            }
+
             // parseClaimsJws will throw if token invalid/expired/signature incorrect
             Jwts.parserBuilder()
                     .setSigningKey(getSigningKey())
                     .build()
                     .parseClaimsJws(token);
+
+            // Additional check for expiration
             return !isTokenExpired(token);
         } catch (JwtException | IllegalArgumentException e) {
             log.error("JWT validation error: {}", e.getMessage());
@@ -82,23 +108,51 @@ public class JwtUtil {
         }
     }
 
+    /**
+     * Check if token is in the blacklist (invalidated)
+     */
+    public boolean isTokenBlacklisted(String token) {
+        try {
+            return invalidatedTokenRepository.existsByToken(token);
+        } catch (Exception e) {
+            log.error("Error checking token blacklist: {}", e.getMessage());
+            // In case of DB error, fail closed (deny access)
+            return true;
+        }
+    }
+
+    /**
+     * Extract email from token
+     */
     public String extractEmail(String token) {
         return extractClaim(token, Claims::getSubject);
     }
 
+    /**
+     * Extract user ID from token
+     */
     public Long extractUserId(String token) {
         return extractClaim(token, claims -> claims.get("userId", Long.class));
     }
 
+    /**
+     * Extract role from token
+     */
     public String extractRole(String token) {
         return extractClaim(token, claims -> claims.get("role", String.class));
     }
 
+    /**
+     * Extract specific claim from token
+     */
     public <T> T extractClaim(String token, Function<Claims, T> claimsResolver) {
         final Claims claims = extractAllClaims(token);
         return claimsResolver.apply(claims);
     }
 
+    /**
+     * Extract all claims from token
+     */
     private Claims extractAllClaims(String token) {
         return Jwts.parserBuilder()
                 .setSigningKey(getSigningKey())
@@ -107,11 +161,17 @@ public class JwtUtil {
                 .getBody();
     }
 
+    /**
+     * Check if token is expired
+     */
     private boolean isTokenExpired(String token) {
         Date exp = extractExpiration(token);
         return exp != null && exp.before(new Date());
     }
 
+    /**
+     * Extract expiration date from token
+     */
     public Date extractExpiration(String token) {
         return extractClaim(token, Claims::getExpiration);
     }

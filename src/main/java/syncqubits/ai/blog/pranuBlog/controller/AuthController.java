@@ -3,6 +3,7 @@ package syncqubits.ai.blog.pranuBlog.controller;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -15,6 +16,8 @@ import syncqubits.ai.blog.pranuBlog.dto.request.ResendOtpRequest;
 import syncqubits.ai.blog.pranuBlog.dto.request.SignupRequest;
 import syncqubits.ai.blog.pranuBlog.dto.request.VerifyOtpRequest;
 import syncqubits.ai.blog.pranuBlog.dto.response.AuthResponse;
+import syncqubits.ai.blog.pranuBlog.dto.response.LogoutResponse;
+import syncqubits.ai.blog.pranuBlog.dto.response.TokenValidationResponse;
 import syncqubits.ai.blog.pranuBlog.service.AuthService;
 
 @RestController
@@ -61,14 +64,41 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    @Operation(summary = "Login user", description = "Authenticate and get JWT token")
+    @Operation(summary = "Login user", description = "Authenticate and get JWT token OR OTP if logged out")
     @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "Login successful, JWT token issued"),
-            @ApiResponse(responseCode = "401", description = "Invalid credentials or email not verified")
+            @ApiResponse(responseCode = "200", description = "Login successful OR OTP sent"),
+            @ApiResponse(responseCode = "401", description = "Invalid credentials")
     })
     public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
         log.info("POST /api/auth/login - Email: {}", request.getEmail());
         AuthResponse response = authService.login(request);
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/logout")
+    @SecurityRequirement(name = "bearerAuth")
+    @Operation(summary = "Logout user", description = "Invalidate JWT token and require OTP on next login")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Logout successful"),
+            @ApiResponse(responseCode = "401", description = "Invalid or missing token")
+    })
+    public ResponseEntity<LogoutResponse> logout(
+            @RequestHeader("Authorization") String authHeader) {
+        log.info("POST /api/auth/logout");
+        LogoutResponse response = authService.logout(authHeader);
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/validate-token")
+    @Operation(summary = "Validate JWT token", description = "Check if token is valid and get user info")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Token validation result"),
+            @ApiResponse(responseCode = "400", description = "Invalid request")
+    })
+    public ResponseEntity<TokenValidationResponse> validateToken(
+            @RequestHeader("Authorization") String authHeader) {
+        log.info("POST /api/auth/validate-token");
+        TokenValidationResponse response = authService.validateToken(authHeader);
         return ResponseEntity.ok(response);
     }
 }

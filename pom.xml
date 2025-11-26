@@ -77,6 +77,13 @@
             <version>2.1.1</version>
         </dependency>
 
+        <!-- Add to pom.xml -->
+        <dependency>
+            <groupId>com.maxmind.geoip2</groupId>
+            <artifactId>geoip2</artifactId>
+            <version>4.0.0</version>
+        </dependency>
+
         <!-- MapStruct -->
         <dependency>
             <groupId>org.mapstruct</groupId>

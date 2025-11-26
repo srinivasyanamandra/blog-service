@@ -5,6 +5,7 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -137,12 +138,14 @@ public class PostController {
     @ApiResponse(responseCode = "200", description = "Post retrieved")
     public ResponseEntity<PostDetailResponse> getPublicPost(
             @PathVariable String shareToken,
+            @RequestParam String guestName, // NOW MANDATORY
             @RequestParam(required = false) String viewerGuestId,
             @RequestParam(required = false) String referrer,
-            @RequestHeader(value = "User-Agent", required = false) String userAgent) {
+            @RequestHeader(value = "User-Agent", required = false) String userAgent,
+            HttpServletRequest request) {
         log.info("GET /api/posts/public/{}", shareToken);
         PostDetailResponse response = postService.getPublicPost(
-                shareToken, viewerGuestId, referrer, userAgent);
+                shareToken, guestName, viewerGuestId, referrer, userAgent, request);
         return ResponseEntity.ok(response);
     }
 
@@ -160,31 +163,42 @@ public class PostController {
     }
 
     @PostMapping("/public/{shareToken}/like")
-    @Operation(summary = "Like post", description = "Like a public post")
-    @ApiResponse(responseCode = "200", description = "Post liked")
-    public ResponseEntity<PostResponse> likePost(
+    @Operation(summary = "Toggle like", description = "Like or unlike a post (toggle behavior)")
+    @ApiResponse(responseCode = "200", description = "Like toggled")
+    public ResponseEntity<Map<String, Object>> toggleLike(
             @PathVariable String shareToken,
-            @RequestBody Map<String, Object> request) {
+            @RequestBody Map<String, Object> requestBody,
+            HttpServletRequest request) {
         log.info("POST /api/posts/public/{}/like", shareToken);
 
-        Long userId = request.containsKey("userId") ?
-                Long.valueOf(request.get("userId").toString()) : null;
-        String guestName = (String) request.get("guestName");
-        String guestIdentifier = (String) request.get("guestIdentifier");
+        Long userId = requestBody.containsKey("userId") ?
+                Long.valueOf(requestBody.get("userId").toString()) : null;
+        String guestName = (String) requestBody.get("guestName");
+        String guestIdentifier = (String) requestBody.get("guestIdentifier");
 
-        PostResponse response = postService.likePost(
-                shareToken, userId, guestName, guestIdentifier);
-        return ResponseEntity.ok(response);
+        if (guestName == null || guestName.trim().isEmpty()) {
+            throw new IllegalArgumentException("Guest name is required");
+        }
+
+        PostResponse response = postService.toggleLike(
+                shareToken, userId, guestName, guestIdentifier, request);
+
+        return ResponseEntity.ok(Map.of(
+                "success", true,
+                "post", response
+        ));
     }
+
 
     @PostMapping("/public/{shareToken}/comments")
     @Operation(summary = "Add comment")
     @ApiResponse(responseCode = "201", description = "Comment added")
     public ResponseEntity<CommentResponse> addComment(
             @PathVariable String shareToken,
-            @Valid @RequestBody CommentRequest request) {
+            @Valid @RequestBody CommentRequest request,
+            HttpServletRequest httpRequest) {
         log.info("POST /api/posts/public/{}/comments", shareToken);
-        CommentResponse response = postService.addComment(shareToken, request);
+        CommentResponse response = postService.addComment(shareToken, request, httpRequest);
         return new ResponseEntity<>(response, HttpStatus.CREATED);
     }
 
