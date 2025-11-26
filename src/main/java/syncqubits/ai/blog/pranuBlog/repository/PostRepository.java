@@ -21,4 +21,7 @@ public interface PostRepository extends JpaRepository<Post, Long> {
     List<Post> findRecentPostsByAuthor(Long authorId);
 
     boolean existsBySlug(String slug);
+
+    List<Post> findByStatusAndIsPublicOrderByCreatedAtDesc(Post.PostStatus status, Boolean isPublic);
+
 }

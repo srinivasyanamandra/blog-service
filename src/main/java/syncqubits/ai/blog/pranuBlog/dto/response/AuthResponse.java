@@ -13,6 +13,8 @@ public class AuthResponse {
     private String name;
     private String email;
     private String role;
+    private String token;
+    private Boolean isVerified;
     private LocalDateTime lastLoginAt;
     private String message;
 }

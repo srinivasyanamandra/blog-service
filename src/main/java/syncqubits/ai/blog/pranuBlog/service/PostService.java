@@ -19,6 +19,7 @@ public interface PostService {
 
     List<PostResponse> getMyPosts(Long authorId);
     PostDetailResponse getPostById(Long authorId, Long postId);
+    List<PostResponse> listPublicPosts(); // NEW METHOD
     PostDetailResponse getPublicPost(String shareToken, String viewerGuestId, String referrer, String userAgent);
 
     PostResponse toggleFavorite(Long authorId, Long postId);

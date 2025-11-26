@@ -15,11 +15,24 @@ spring:
     hibernate:
       ddl-auto: update
 
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: ${SPRING_MAIL_USERNAME:thehostcode@gmail.com}
+    password: ${SPRING_MAIL_PASSWORD:swbp feky rzci omtq}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+        debug: true
+
 server:
   port: 1910
   error:
     include-message: always
-    include-binding-errors: always
 
 springdoc:
   api-docs:
@@ -27,3 +40,16 @@ springdoc:
   swagger-ui:
     path: /swagger-ui.html
     operations-sorter: method
+
+# ----- TOP-LEVEL app section (NOT nested under spring) -----
+app:
+  jwt:
+    secret: ${JWT_SECRET:C4UYUEVWWDowu7aVXlcr8FjmnCzEZAoyivPr94zw6zU}
+    expiration: 86400000
+  otp:
+    expiration: 300000
+    length: 6
+  email:
+    from: ${SPRING_MAIL_USERNAME:thehostcode@gmail.com}
+  cors:
+    allowed-origins: "*"

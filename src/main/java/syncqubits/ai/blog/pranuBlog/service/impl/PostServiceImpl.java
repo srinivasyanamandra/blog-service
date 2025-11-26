@@ -41,6 +41,21 @@ public class PostServiceImpl implements PostService {
     private final TokenGenerator tokenGenerator;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<PostResponse> listPublicPosts() {
+        log.info("Fetching all public posts");
+
+        List<Post> posts = postRepository.findByStatusAndIsPublicOrderByCreatedAtDesc(
+                Post.PostStatus.PUBLISHED, true);
+
+        return posts.stream()
+                .map(this::toPostResponse)
+                .collect(Collectors.toList());
+    }
+
+
     @Override
     @Transactional
     public PostResponse createPost(Long authorId, CreatePostRequest request) {

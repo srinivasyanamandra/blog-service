@@ -7,7 +7,6 @@ import org.hibernate.annotations.CreationTimestamp;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 
 @Entity
 @Table(name = "users")
@@ -35,6 +34,16 @@ public class User {
     @Enumerated(EnumType.STRING)
     @Builder.Default
     private UserRole role = UserRole.AUTHOR;
+
+    @Column
+    private String otp;
+
+    @Column
+    private LocalDateTime otpExpiryTime;
+
+    @Column(nullable = false)
+    @Builder.Default
+    private Boolean isVerified = false;
 
     @CreationTimestamp
     @Column(nullable = false, updatable = false)

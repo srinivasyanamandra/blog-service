@@ -2,14 +2,34 @@ spring:
   datasource:
     url: jdbc:postgresql://localhost:5432/blog_db
     username: postgres
-    password: Srinu19#
+    password: Srinu19#   # DEV: rotate if leaked; prefer using environment variables
     driver-class-name: org.postgresql.Driver
 
   jpa:
     show-sql: true
+
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: ${SPRING_MAIL_USERNAME:thehostcode@gmail.com}
+    password: ${SPRING_MAIL_PASSWORD:swbp feky rzci omtq}  # set via env var, don't commit secrets
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+        debug: true
 
 logging:
   level:
     syncqubits.ai.blog: DEBUG
     org.springframework.web: DEBUG
     org.hibernate.SQL: DEBUG
+
+app:
+  jwt:
+    # DEV ONLY — replace/override from env var JWT_SECRET in real usage
+    secret: C4UYUEVWWDowu7aVXlcr8FjmnCzEZAoyivPr94zw6zU
+    expiration: 86400000
