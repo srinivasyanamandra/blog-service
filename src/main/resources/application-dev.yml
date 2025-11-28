@@ -1,8 +1,8 @@
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/blog_db
-    username: postgres
-    password: Srinu19#   # DEV: rotate if leaked; prefer using environment variables
+    url: ${DEV_DB_URL:jdbc:postgresql://localhost:5432/blog_db}
+    username: ${DEV_DB_USERNAME:postgres}
+    password: ${DEV_DB_PASSWORD:Srinu19#} # DEV: rotate if leaked; prefer using environment variables
     driver-class-name: org.postgresql.Driver
 
   jpa:
@@ -30,6 +30,5 @@ logging:
 
 app:
   jwt:
-    # DEV ONLY — replace/override from env var JWT_SECRET in real usage
-    secret: C4UYUEVWWDowu7aVXlcr8FjmnCzEZAoyivPr94zw6zU
+    secret: ${JWT_SECRET:C4UYUEVWWDowu7aVXlcr8FjmnCzEZAoyivPr94zw6zU}
     expiration: 10800000

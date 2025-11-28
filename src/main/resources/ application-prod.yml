@@ -10,6 +10,33 @@ spring:
     hibernate:
       ddl-auto: validate
 
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: ${SPRING_MAIL_USERNAME}
+    password: ${SPRING_MAIL_PASSWORD}  # set via env var, don't commit secrets
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+        debug: true
+
+app:
+  jwt:
+    secret: ${JWT_SECRET}
+    expiration: 10800000
+  otp:
+    expiration: 300000
+    length: 6
+  email:
+    from: ${SPRING_MAIL_USERNAME}
+    logo-url: https://1drv.ms/f/c/865403e1743e3bfe/IgASe0zh1ImGQL8tYrfKzOd4Acgsq4zzbDUAfQxpSM-zS1U?e=vV3qeG
+  cors:
+    allowed-origins: "*"
+
 logging:
   level:
     syncqubits.ai.blog: INFO

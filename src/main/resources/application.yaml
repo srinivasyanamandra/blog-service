@@ -3,7 +3,8 @@ spring:
     name: pranu-blog
 
   profiles:
-    active: dev
+    # default = dev locally, but can be overridden by env var in Render
+    active: ${SPRING_PROFILES_ACTIVE:dev}
 
   jpa:
     open-in-view: false
@@ -19,7 +20,7 @@ spring:
     host: smtp.gmail.com
     port: 587
     username: ${SPRING_MAIL_USERNAME:thehostcode@gmail.com}
-    password: ${SPRING_MAIL_PASSWORD:swbp feky rzci omtq}
+    password: ${SPRING_MAIL_PASSWORD:swbp feky rzci omtq}   # (move this fully to env later!)
     properties:
       mail:
         smtp:
@@ -30,7 +31,8 @@ spring:
         debug: true
 
 server:
-  port: 1910
+  # Use Render's PORT env var; fall back to 1910 locally
+  port: ${PORT:1910}
   error:
     include-message: always
 
@@ -41,7 +43,6 @@ springdoc:
     path: /swagger-ui.html
     operations-sorter: method
 
-# ----- TOP-LEVEL app section (NOT nested under spring) -----
 app:
   jwt:
     secret: ${JWT_SECRET:C4UYUEVWWDowu7aVXlcr8FjmnCzEZAoyivPr94zw6zU}
@@ -54,4 +55,3 @@ app:
     logo-url: https://1drv.ms/f/c/865403e1743e3bfe/IgASe0zh1ImGQL8tYrfKzOd4Acgsq4zzbDUAfQxpSM-zS1U?e=vV3qeG
   cors:
     allowed-origins: "*"
-
